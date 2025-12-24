@@ -1,4 +1,5 @@
 ﻿#include "fft_handler.hpp"
+#include "debug_log.hpp"
 #include <cstdio>
 #include <cmath>
 #include <fstream>
@@ -68,7 +69,7 @@ EventTiming profile_event_detailed(cl_event event) {
 double FFTHandler::profile_event(cl_event event, const std::string& label) {
     EventTiming timing = profile_event_detailed(event);
     double elapsed_ms = timing.execute_ms;
-    printf("  [PROFILE] %s: %.3f ms\n", label.c_str(), elapsed_ms);
+    DEBUG_LOG("  [PROFILE] %s: %.3f ms\n", label.c_str(), elapsed_ms);
     return elapsed_ms;
 }
 
@@ -84,16 +85,16 @@ void FFTHandler::initialize(
     float scale_factor
 ) {
     if (ctx_.initialized) {
-        printf("[WARNING] FFT Handler already initialized, skipping...\n");
+        WARNING_LOG("FFT Handler already initialized, skipping...\n");
         return;
     }
     
-    printf("[FFT] Initializing FFT handler...\n");
-    printf("  Signal size (N): %zu\n", N);
-    printf("  Num shifts: %d\n", num_shifts);
-    printf("  Num signals: %d\n", num_signals);
-    printf("  Num output points (n_kg): %d\n", n_kg);
-    printf("  Scale factor: %.2e\n\n", scale_factor);
+    INFO_LOG("[FFT] Initializing FFT handler...\n");
+    DEBUG_LOG("  Signal size (N): %zu\n", N);
+    DEBUG_LOG("  Num shifts: %d\n", num_shifts);
+    DEBUG_LOG("  Num signals: %d\n", num_signals);
+    DEBUG_LOG("  Num output points (n_kg): %d\n", n_kg);
+    DEBUG_LOG("  Scale factor: %.2e\n\n", scale_factor);
     
     // Сохранить параметры для использования в getFFTSize() и других методах
     fft_size_ = N;
@@ -108,7 +109,7 @@ void FFTHandler::initialize(
     // 1. CREATE GPU BUFFERS
     // ========================================================================
     
-    printf("[FFT] Allocating GPU buffers...\n");
+    DEBUG_LOG("[FFT] Allocating GPU buffers...\n");
     
     // Reference signals buffers
     ctx_.reference_data = clCreateBuffer(
@@ -167,13 +168,13 @@ void FFTHandler::initialize(
     );
     if (err != CL_SUCCESS) throw std::runtime_error("Failed to allocate correlation_ifft buffer");
     
-    printf("[OK] GPU buffers allocated\n\n");
+    DEBUG_LOG("[OK] GPU buffers allocated\n\n");
     
     // ========================================================================
     // 2. CREATE FFT PLANS (1D batch FFT)
     // ========================================================================
     
-    printf("[FFT] Creating FFT plans...\n");
+    DEBUG_LOG("[FFT] Creating FFT plans...\n");
     
     // Plan for reference signals (batch of num_shifts) with pre-callback (int32→float2) and post-callback (conjugate)
     ctx_.reference_fft_plan = create_fft_plan_1d_with_pre_and_post_callback_conjugate(N, num_shifts, scale_factor, "Reference FFT Plan");
@@ -181,13 +182,13 @@ void FFTHandler::initialize(
     // Plan for input signals (batch of num_signals) with pre-callback
     ctx_.input_fft_plan = create_fft_plan_1d_with_precallback(N, num_signals, scale_factor, "Input FFT Plan");
     
-    printf("[OK] FFT plans created\n\n");
+    DEBUG_LOG("[OK] FFT plans created\n\n");
     
     // ========================================================================
     // 4. CREATE POST-CALLBACK USERDATA (must be created before IFFT plan)
     // ========================================================================
     
-    printf("[FFT] Creating post-callback userdata...\n");
+    DEBUG_LOG("[FFT] Creating post-callback userdata...\n");
     
     PostCallbackParams post_params = {
         (cl_uint)num_signals,
@@ -199,20 +200,20 @@ void FFTHandler::initialize(
     
     create_post_callback_userdata(N, num_signals, num_shifts, n_kg, post_params);
     
-    printf("[OK] Post-callback userdata created\n\n");
+    DEBUG_LOG("[OK] Post-callback userdata created\n\n");
     
     // Plan for correlation IFFT (batch of num_signals × num_shifts) 
     // with PRE-CALLBACK (Complex Multiply) and POST-CALLBACK (Find Peaks)
     // Оба callback'а встроены в план для минимального времени выполнения
     ctx_.correlation_ifft_plan = create_fft_plan_1d_with_pre_and_post_callback(N, num_signals * num_shifts, num_signals, num_shifts, n_kg, "Correlation IFFT Plan");
     
-    printf("[OK] IFFT plan with post-callback created\n\n");
+    DEBUG_LOG("[OK] IFFT plan with post-callback created\n\n");
     
     // ========================================================================
     // 3. CREATE PRE-CALLBACK USERDATA
     // ========================================================================
     
-    printf("[FFT] Creating pre-callback userdata...\n");
+    DEBUG_LOG("[FFT] Creating pre-callback userdata...\n");
     
     PreCallbackParams pre_params = {
         (cl_uint)num_shifts,
@@ -223,11 +224,11 @@ void FFTHandler::initialize(
     
     create_pre_callback_userdata(N, num_shifts, pre_params, nullptr);
     
-    printf("[OK] Pre-callback userdata created\n\n");
+    DEBUG_LOG("[OK] Pre-callback userdata created\n\n");
     
     ctx_.initialized = true;
     
-    printf("[OK] FFT Handler fully initialized!\n\n");
+    INFO_LOG("[OK] FFT Handler fully initialized!\n\n");
 }
 
 // ============================================================================
@@ -263,15 +264,15 @@ clfftPlanHandle FFTHandler::create_fft_plan_1d(
     clfftSetPlanDistance(plan_handle, dist, dist);
     
     // Bake the plan
-    printf("  [DEBUG] Baking FFT plan: fft_size=%zu, batch_size=%d\n", fft_size, batch_size);
+    VERBOSE_LOG("  [DEBUG] Baking FFT plan: fft_size=%zu, batch_size=%d\n", fft_size, batch_size);
     err = clfftBakePlan(plan_handle, 1, &ctx_.queue, nullptr, nullptr);
     if (err != CL_SUCCESS) {
-        fprintf(stderr, "ERROR: clfftBakePlan failed for %s with error %d\n", plan_name.c_str(), err);
+        ERROR_LOG("clfftBakePlan failed for %s with error %d\n", plan_name.c_str(), err);
         throw std::runtime_error("clfftBakePlan failed for " + plan_name);
     }
-    printf("  [DEBUG] FFT plan baked successfully\n");
+    VERBOSE_LOG("  [DEBUG] FFT plan baked successfully\n");
     
-    printf("  ✓ %s created (size=%zu, batch=%d)\n", plan_name.c_str(), fft_size, batch_size);
+    DEBUG_LOG("  ✓ %s created (size=%zu, batch=%d)\n", plan_name.c_str(), fft_size, batch_size);
     
     return plan_handle;
 }
@@ -365,7 +366,7 @@ float2 pre_callback(__global void* input, uint inoffset, __global void* userdata
     
     // Note: callback_userdata is managed by clFFT plan, don't release it here
     
-    printf("  ✓ %s created with pre-callback (size=%zu, batch=%d)\n", plan_name.c_str(), fft_size, batch_size);
+    DEBUG_LOG("  ✓ %s created with pre-callback (size=%zu, batch=%d)\n", plan_name.c_str(), fft_size, batch_size);
     
     return plan_handle;
 }
@@ -483,7 +484,7 @@ void post_callback_conjugate(__global void* output, uint outoffset, __global voi
     
     // Note: pre_callback_userdata is managed by clFFT plan, don't release it here
     
-    printf("  ✓ %s created with pre-callback (int32→float2) and post-callback (conjugate) (size=%zu, batch=%d)\n", 
+    DEBUG_LOG("  ✓ %s created with pre-callback (int32→float2) and post-callback (conjugate) (size=%zu, batch=%d)\n", 
            plan_name.c_str(), fft_size, batch_size);
     
     return plan_handle;
@@ -594,7 +595,7 @@ void post_callback(__global void* output, uint outoffset, __global void* userdat
         throw std::runtime_error("clfftBakePlan failed for " + plan_name);
     }
     
-    printf("  ✓ %s created with post-callback (size=%zu, batch=%d)\n", plan_name.c_str(), fft_size, batch_size);
+    DEBUG_LOG("  ✓ %s created with post-callback (size=%zu, batch=%d)\n", plan_name.c_str(), fft_size, batch_size);
     
     return plan_handle;
 }
@@ -809,8 +810,8 @@ void post_callback(__global void* output, uint outoffset, __global void* userdat
     // Note: pre_callback_userdata is managed by clFFT plan, but we may need to release it
     // For now, keep it for potential future use
     
-    printf("  ✓ %s created with PRE-CALLBACK (Complex Multiply) and POST-CALLBACK (Find Peaks)\n", plan_name.c_str());
-    printf("    Note: Оба callback'а встроены в план для минимального времени выполнения!\n");
+    DEBUG_LOG("  ✓ %s created with PRE-CALLBACK (Complex Multiply) and POST-CALLBACK (Find Peaks)\n", plan_name.c_str());
+    DEBUG_LOG("    Note: Оба callback'а встроены в план для минимального времени выполнения!\n");
     
     return plan_handle;
 }
@@ -929,26 +930,26 @@ void FFTHandler::step1_reference_signals(
     OperationTiming& upload_timing,
     OperationTiming& fft_timing
 ) {
-    printf("[STEP 1] Processing reference signals...\n");
+    INFO_LOG("[STEP 1] Processing reference signals...\n");
     
     // ВАЖНО: Проверить соответствие параметров с параметрами инициализации
-    printf("  [DEBUG] Step1 parameters check:\n");
-    printf("    Passed: N=%zu, num_shifts=%d, scale_factor=%.6f\n", N, num_shifts, scale_factor);
-    printf("    Stored: fft_size_=%zu, num_shifts_=%d, scale_factor_=%.6f\n", 
+    VERBOSE_LOG("  [DEBUG] Step1 parameters check:\n");
+    VERBOSE_LOG("    Passed: N=%zu, num_shifts=%d, scale_factor=%.6f\n", N, num_shifts, scale_factor);
+    VERBOSE_LOG("    Stored: fft_size_=%zu, num_shifts_=%d, scale_factor_=%.6f\n", 
            fft_size_, num_shifts_, scale_factor_);
     
     if (N != fft_size_) {
-        fprintf(stderr, "ERROR: N mismatch! Passed: %zu, Stored: %zu\n", N, fft_size_);
+        ERROR_LOG("N mismatch! Passed: %zu, Stored: %zu\n", N, fft_size_);
         throw std::runtime_error("FFT size mismatch in step1_reference_signals");
     }
     
     if (num_shifts != num_shifts_) {
-        fprintf(stderr, "ERROR: num_shifts mismatch! Passed: %d, Stored: %d\n", num_shifts, num_shifts_);
+        ERROR_LOG("num_shifts mismatch! Passed: %d, Stored: %d\n", num_shifts, num_shifts_);
         throw std::runtime_error("num_shifts mismatch in step1_reference_signals");
     }
     
     if (std::abs(scale_factor - scale_factor_) > 1e-6f) {
-        fprintf(stderr, "WARNING: scale_factor mismatch! Passed: %.6f, Stored: %.6f\n", 
+        WARNING_LOG("scale_factor mismatch! Passed: %.6f, Stored: %.6f\n", 
                 scale_factor, scale_factor_);
         // Это не критично, но стоит проверить
     }
@@ -967,17 +968,17 @@ void FFTHandler::step1_reference_signals(
         clGetMemObjectInfo(ctx_.reference_fft, CL_MEM_SIZE, sizeof(size_t), &actual_reference_fft_size, nullptr);
     }
     
-    printf("  [DEBUG] Buffer sizes check:\n");
-    printf("    reference_data: expected=%zu, actual=%zu\n", expected_reference_data_size, actual_reference_data_size);
-    printf("    reference_fft: expected=%zu, actual=%zu\n", expected_reference_fft_size, actual_reference_fft_size);
+    VERBOSE_LOG("  [DEBUG] Buffer sizes check:\n");
+    VERBOSE_LOG("    reference_data: expected=%zu, actual=%zu\n", expected_reference_data_size, actual_reference_data_size);
+    VERBOSE_LOG("    reference_fft: expected=%zu, actual=%zu\n", expected_reference_fft_size, actual_reference_fft_size);
     
     if (expected_reference_data_size != actual_reference_data_size) {
-        fprintf(stderr, "ERROR: reference_data buffer size mismatch!\n");
+        ERROR_LOG("reference_data buffer size mismatch!\n");
         throw std::runtime_error("reference_data buffer size mismatch");
     }
     
     if (expected_reference_fft_size != actual_reference_fft_size) {
-        fprintf(stderr, "ERROR: reference_fft buffer size mismatch!\n");
+        ERROR_LOG("reference_fft buffer size mismatch!\n");
         throw std::runtime_error("reference_fft buffer size mismatch");
     }
 
@@ -988,7 +989,7 @@ void FFTHandler::step1_reference_signals(
     // 1. Upload reference signal to GPU
     // ========================================================================
 
-    printf("  1. Uploading reference signal to GPU...\n");
+    DEBUG_LOG("  1. Uploading reference signal to GPU...\n");
 
     err = clEnqueueWriteBuffer(
         ctx_.queue,
@@ -1012,14 +1013,14 @@ void FFTHandler::step1_reference_signals(
     upload_timing.queue_wait_ms = upload_event_timing.queue_wait_ms;
     upload_timing.cpu_wait_ms = upload_event_timing.wait_ms;
     upload_timing.total_gpu_ms = upload_event_timing.total_ms;
-    printf("  [PROFILE] Upload reference: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
+    DEBUG_LOG("  [PROFILE] Upload reference: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
            upload_event_timing.execute_ms, upload_event_timing.queue_wait_ms, upload_event_timing.wait_ms);
 
     // ========================================================================
     // 2. Pre-Callback встроен в clFFT план (выполняется автоматически)
     // ========================================================================
 
-    printf("  2. Pre-callback встроен в clFFT план (выполняется автоматически)...\n");
+    DEBUG_LOG("  2. Pre-callback встроен в clFFT план (выполняется автоматически)...\n");
     
     // Callback встроен в FFT, его время включено в FFT время
     time_callback_ms = 0.0;
@@ -1028,32 +1029,32 @@ void FFTHandler::step1_reference_signals(
     // 3. Execute Forward FFT (callback выполнится автоматически через clFFT)
     // ========================================================================
 
-    printf("  3. Executing forward FFT (batch of %d) with embedded pre-callback...\n", num_shifts);
+    DEBUG_LOG("  3. Executing forward FFT (batch of %d) with embedded pre-callback...\n", num_shifts);
 
     // Проверить, что план валиден
     if (!ctx_.reference_fft_plan) {
-        fprintf(stderr, "ERROR: reference_fft_plan is null!\n");
+        ERROR_LOG("reference_fft_plan is null!\n");
         throw std::runtime_error("reference_fft_plan is null");
     }
     
     // Проверить, что буферы валидны
     if (!ctx_.reference_data) {
-        fprintf(stderr, "ERROR: reference_data buffer is null!\n");
+        ERROR_LOG("reference_data buffer is null!\n");
         throw std::runtime_error("reference_data buffer is null");
     }
     
     if (!ctx_.reference_fft) {
-        fprintf(stderr, "ERROR: reference_fft buffer is null!\n");
+        ERROR_LOG("reference_fft buffer is null!\n");
         throw std::runtime_error("reference_fft buffer is null");
     }
     
-    printf("  [DEBUG] Plan and buffers check: plan=%p, ref_data=%p, ref_fft=%p\n",
+    VERBOSE_LOG("  [DEBUG] Plan and buffers check: plan=%p, ref_data=%p, ref_fft=%p\n",
            (void*)ctx_.reference_fft_plan, (void*)ctx_.reference_data, (void*)ctx_.reference_fft);
 
     // Инициализировать event_fft как nullptr перед вызовом
     event_fft = nullptr;
     
-    printf("  [DEBUG] Calling clfftEnqueueTransform: plan=%p, queue=%p, input=%p, output=%p\n",
+    VERBOSE_LOG("  [DEBUG] Calling clfftEnqueueTransform: plan=%p, queue=%p, input=%p, output=%p\n",
            (void*)ctx_.reference_fft_plan, (void*)ctx_.queue, 
            (void*)ctx_.reference_data, (void*)ctx_.reference_fft);
 
@@ -1070,11 +1071,11 @@ void FFTHandler::step1_reference_signals(
         nullptr
     );
 
-    printf("  [DEBUG] clfftEnqueueTransform status: %d (CLFFT_SUCCESS=%d)\n", fft_status, CLFFT_SUCCESS);
-    printf("  [DEBUG] event_fft after enqueue: %p\n", (void*)event_fft);
+    VERBOSE_LOG("  [DEBUG] clfftEnqueueTransform status: %d (CLFFT_SUCCESS=%d)\n", fft_status, CLFFT_SUCCESS);
+    VERBOSE_LOG("  [DEBUG] event_fft after enqueue: %p\n", (void*)event_fft);
 
     if (fft_status != CLFFT_SUCCESS) {
-        fprintf(stderr, "ERROR: clfftEnqueueTransform failed with status %d\n", fft_status);
+        ERROR_LOG("clfftEnqueueTransform failed with status %d\n", fft_status);
         if (event_upload) clReleaseEvent(event_upload);
         if (event_fft) clReleaseEvent(event_fft);
         throw std::runtime_error("clfftEnqueueTransform failed for reference FFT");
@@ -1086,7 +1087,7 @@ void FFTHandler::step1_reference_signals(
         cl_int event_status = CL_QUEUED;
         cl_int err = clGetEventInfo(event_fft, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(cl_int), &event_status, nullptr);
         if (err == CL_SUCCESS) {
-            printf("  [DEBUG] FFT event status: %d (CL_COMPLETE=%d)\n", event_status, CL_COMPLETE);
+            VERBOSE_LOG("  [DEBUG] FFT event status: %d (CL_COMPLETE=%d)\n", event_status, CL_COMPLETE);
         }
         
         EventTiming fft_event_timing = profile_event_detailed(event_fft);
@@ -1095,26 +1096,26 @@ void FFTHandler::step1_reference_signals(
         fft_timing.queue_wait_ms = fft_event_timing.queue_wait_ms;
         fft_timing.cpu_wait_ms = fft_event_timing.wait_ms;
         fft_timing.total_gpu_ms = fft_event_timing.total_ms;
-        printf("  [PROFILE] Forward FFT: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
+        DEBUG_LOG("  [PROFILE] Forward FFT: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
                fft_event_timing.execute_ms, fft_event_timing.queue_wait_ms, fft_event_timing.wait_ms);
         
         // Проверить, что время не равно нулю (это может означать, что операция не выполнилась)
         if (fft_event_timing.execute_ms == 0.0 && fft_event_timing.total_ms == 0.0) {
-            fprintf(stderr, "  WARNING: FFT timing is zero! This may indicate the operation did not execute.\n");
-            fprintf(stderr, "  Check if the FFT plan is valid and buffers are correct.\n");
+            WARNING_LOG("FFT timing is zero! This may indicate the operation did not execute.\n");
+            WARNING_LOG("Check if the FFT plan is valid and buffers are correct.\n");
         }
         
         // Важно: дождаться завершения FFT операции перед освобождением события
         // Это гарантирует, что данные в ctx_.reference_fft готовы для чтения
         cl_int wait_err = clWaitForEvents(1, &event_fft);
         if (wait_err != CL_SUCCESS) {
-            fprintf(stderr, "WARNING: clWaitForEvents failed with code %d\n", wait_err);
+            WARNING_LOG("clWaitForEvents failed with code %d\n", wait_err);
     } else {
-            printf("  [DEBUG] FFT event completed successfully\n");
+            VERBOSE_LOG("  [DEBUG] FFT event completed successfully\n");
         }
     } else {
-        fprintf(stderr, "ERROR: FFT event is null! clfftEnqueueTransform did not create an event.\n");
-        fprintf(stderr, "  This means the FFT operation may not have been queued.\n");
+        ERROR_LOG("FFT event is null! clfftEnqueueTransform did not create an event.\n");
+        ERROR_LOG("This means the FFT operation may not have been queued.\n");
         time_fft_ms = 0.0;
         fft_timing = OperationTiming{};
     }
@@ -1127,10 +1128,10 @@ void FFTHandler::step1_reference_signals(
     // Это важно для гарантии, что данные готовы для чтения
     cl_int finish_err = clFinish(ctx_.queue);
     if (finish_err != CL_SUCCESS) {
-        fprintf(stderr, "WARNING: clFinish failed with code %d after Step 1\n", finish_err);
+        WARNING_LOG("clFinish failed with code %d after Step 1\n", finish_err);
     }
 
-    printf("[OK] Step 1 completed!\n\n");
+    INFO_LOG("[OK] Step 1 completed!\n\n");
 }
 
 // ============================================================================
@@ -1148,13 +1149,13 @@ void FFTHandler::step2_input_signals(
     OperationTiming& upload_timing,
     OperationTiming& fft_timing
 ) {
-    printf("[STEP 2] Processing input signals...\n");
+    INFO_LOG("[STEP 2] Processing input signals...\n");
 
     cl_int err = CL_SUCCESS;
     cl_event event_upload, event_fft;
 
     // Upload input signals
-    printf("  1. Uploading input signals to GPU...\n");
+    DEBUG_LOG("  1. Uploading input signals to GPU...\n");
 
 
     err = clEnqueueWriteBuffer(
@@ -1179,19 +1180,19 @@ void FFTHandler::step2_input_signals(
     upload_timing.queue_wait_ms = upload_event_timing.queue_wait_ms;
     upload_timing.cpu_wait_ms = upload_event_timing.wait_ms;
     upload_timing.total_gpu_ms = upload_event_timing.total_ms;
-    printf("  [PROFILE] Upload input: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
+    DEBUG_LOG("  [PROFILE] Upload input: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
            upload_event_timing.execute_ms, upload_event_timing.queue_wait_ms, upload_event_timing.wait_ms);
 
     // Pre-callback встроен в clFFT план, выполняется автоматически
     // Измеряем только время выполнения FFT (callback включен в FFT время)
-    printf("  2. Pre-callback встроен в clFFT план (выполняется автоматически)...\n");
+    DEBUG_LOG("  2. Pre-callback встроен в clFFT план (выполняется автоматически)...\n");
     
     // Время callback включается в общее время FFT, так как он встроен
     // Для отдельного измерения нужно было бы использовать события, но callback встроен
     time_callback_ms = 0.0;  // Callback встроен в FFT, измеряется как часть FFT
 
     // Execute Forward FFT (callback выполнится автоматически через clFFT)
-    printf("  3. Executing forward FFT (batch of %d) with embedded pre-callback...\n", num_signals);
+    DEBUG_LOG("  3. Executing forward FFT (batch of %d) with embedded pre-callback...\n", num_signals);
 
     clfftStatus fft_status = clfftEnqueueTransform(
         ctx_.input_fft_plan,
@@ -1206,7 +1207,7 @@ void FFTHandler::step2_input_signals(
         nullptr
     );
 
-    printf("  FFT status: %d\n", fft_status);
+    VERBOSE_LOG("  FFT status: %d\n", fft_status);
 
     if (fft_status != CLFFT_SUCCESS) {
         clReleaseEvent(event_upload);
@@ -1229,7 +1230,7 @@ void FFTHandler::step2_input_signals(
             throw std::runtime_error("Failed to wait for FFT completion");
         }
     } else {
-        printf("  Warning: FFT event is null, skipping wait\n");
+        WARNING_LOG("FFT event is null, skipping wait\n");
     }
 
     // Measure FFT time (detailed)
@@ -1240,7 +1241,7 @@ void FFTHandler::step2_input_signals(
         fft_timing.queue_wait_ms = fft_event_timing.queue_wait_ms;
         fft_timing.cpu_wait_ms = fft_event_timing.wait_ms;
         fft_timing.total_gpu_ms = fft_event_timing.total_ms;
-        printf("  [PROFILE] Forward FFT: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
+        DEBUG_LOG("  [PROFILE] Forward FFT: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
                fft_event_timing.execute_ms, fft_event_timing.queue_wait_ms, fft_event_timing.wait_ms);
     } else {
         time_fft_ms = 0.0;
@@ -1251,7 +1252,7 @@ void FFTHandler::step2_input_signals(
     clReleaseEvent(event_upload);
     if (event_fft) clReleaseEvent(event_fft);
 
-    printf("[OK] Step 2 completed!\n\n");
+    INFO_LOG("[OK] Step 2 completed!\n\n");
 }
 
 // ============================================================================
@@ -1271,9 +1272,9 @@ void FFTHandler::step3_correlation(
     OperationTiming& ifft_timing,
     OperationTiming& download_timing
 ) {
-    printf("[STEP 3] Computing correlation...\n");
-    printf("  Total correlations: %d × %d = %d\n", num_signals, num_shifts, num_signals * num_shifts);
-    printf("  Operation: 1. Pre-callback (Complex Multiply) → 2. IFFT → 3. Post-callback (Find Peaks) → 4. Download results\n\n");
+    INFO_LOG("[STEP 3] Computing correlation...\n");
+    DEBUG_LOG("  Total correlations: %d × %d = %d\n", num_signals, num_shifts, num_signals * num_shifts);
+    DEBUG_LOG("  Operation: 1. Pre-callback (Complex Multiply) → 2. IFFT → 3. Post-callback (Find Peaks) → 4. Download results\n\n");
     
     cl_int err = CL_SUCCESS;
     cl_event event_copy_data = nullptr, event_ifft = nullptr, event_download = nullptr;
@@ -1292,8 +1293,8 @@ void FFTHandler::step3_correlation(
     // clFFT PRE-CALLBACK может читать данные только из userdata буфера
     // PRE-CALLBACK автоматически выполнит Complex Multiply при вызове IFFT
     
-    printf("  1. Pre-callback: Preparing data from GPU buffers (reference_fft + input_fft) for Complex Multiply...\n");
-    printf("     Note: Данные уже на GPU, выполняем быстрое GPU->GPU копирование в userdata\n");
+    DEBUG_LOG("  1. Pre-callback: Preparing data from GPU buffers (reference_fft + input_fft) for Complex Multiply...\n");
+    DEBUG_LOG("     Note: Данные уже на GPU, выполняем быстрое GPU->GPU копирование в userdata\n");
     
     if (!ctx_.pre_callback_userdata_correlation) {
         throw std::runtime_error("pre_callback_userdata_correlation not initialized");
@@ -1356,18 +1357,18 @@ void FFTHandler::step3_correlation(
     multiply_timing.queue_wait_ms = copy_event_timing.queue_wait_ms;
     multiply_timing.cpu_wait_ms = copy_event_timing.wait_ms;
     multiply_timing.total_gpu_ms = copy_event_timing.total_ms;
-    printf("  [PROFILE] GPU->GPU copy to userdata: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
+    DEBUG_LOG("  [PROFILE] GPU->GPU copy to userdata: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
            copy_event_timing.execute_ms, copy_event_timing.queue_wait_ms, copy_event_timing.wait_ms);
     
     clReleaseEvent(event_copy_ref);
     
-    printf("  [OK] Data prepared in userdata (PRE-CALLBACK will perform Complex Multiply during IFFT)\n");
+    DEBUG_LOG("  [OK] Data prepared in userdata (PRE-CALLBACK will perform Complex Multiply during IFFT)\n");
     
     // ========================================================================
     // 2. EXECUTE INVERSE FFT (PRE-CALLBACK и POST-CALLBACK встроены в план)
     // ========================================================================
     
-    printf("  2. Executing IFFT (batch of 2000) with embedded PRE-CALLBACK (Complex Multiply) and POST-CALLBACK (Find Peaks)...\n");
+    DEBUG_LOG("  2. Executing IFFT (batch of 2000) with embedded PRE-CALLBACK (Complex Multiply) and POST-CALLBACK (Find Peaks)...\n");
     
     // PRE-CALLBACK автоматически выполнит Complex Multiply из userdata
     // POST-CALLBACK автоматически запишет пики в post_callback_userdata
@@ -1395,15 +1396,15 @@ void FFTHandler::step3_correlation(
     ifft_timing.queue_wait_ms = ifft_event_timing.queue_wait_ms;
     ifft_timing.cpu_wait_ms = ifft_event_timing.wait_ms;
     ifft_timing.total_gpu_ms = ifft_event_timing.total_ms;
-    printf("  [PROFILE] Inverse FFT: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
-           ifft_event_timing.execute_ms, ifft_event_timing.queue_wait_ms, ifft_event_timing.wait_ms);
+        DEBUG_LOG("  [PROFILE] Inverse FFT: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
+               ifft_event_timing.execute_ms, ifft_event_timing.queue_wait_ms, ifft_event_timing.wait_ms);
     
     // ========================================================================
     // 4. DOWNLOAD RESULTS
     // ========================================================================
     
-    printf("  3. Downloading correlation results (peaks) from POST-CALLBACK userdata...\n");
-    printf("     Size: %d × %d × %d elements = %.2f KB\n",
+    DEBUG_LOG("  3. Downloading correlation results (peaks) from POST-CALLBACK userdata...\n");
+    DEBUG_LOG("     Size: %d × %d × %d elements = %.2f KB\n",
            num_signals, num_shifts, n_kg,
            num_signals * num_shifts * n_kg * sizeof(float) / 1024.0f);
     
@@ -1432,11 +1433,11 @@ void FFTHandler::step3_correlation(
     );
     
     if (err != CL_SUCCESS) {
-        fprintf(stderr, "ERROR: clEnqueueReadBuffer failed with error code: %d (CL_INVALID_VALUE)\n", err);
-        fprintf(stderr, "ERROR: Details: offset=%zu, size=%zu, post_params_size=%zu\n", 
+        ERROR_LOG("clEnqueueReadBuffer failed with error code: %d (CL_INVALID_VALUE)\n", err);
+        ERROR_LOG("Details: offset=%zu, size=%zu, post_params_size=%zu\n", 
                 post_params_size, peaks_size, post_params_size);
         if (!ctx_.post_callback_userdata) {
-            fprintf(stderr, "ERROR: ctx_.post_callback_userdata is NULL!\n");
+            ERROR_LOG("ctx_.post_callback_userdata is NULL!\n");
         }
         if (event_copy_data) clReleaseEvent(event_copy_data);
         if (event_ifft) clReleaseEvent(event_ifft);
@@ -1449,7 +1450,7 @@ void FFTHandler::step3_correlation(
     download_timing.queue_wait_ms = download_event_timing.queue_wait_ms;
     download_timing.cpu_wait_ms = download_event_timing.wait_ms;
     download_timing.total_gpu_ms = download_event_timing.total_ms;
-    printf("  [PROFILE] Download results: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
+    DEBUG_LOG("  [PROFILE] Download results: execute=%.3f ms, queue_wait=%.3f ms, wait=%.3f ms\n", 
            download_event_timing.execute_ms, download_event_timing.queue_wait_ms, download_event_timing.wait_ms);
     
     // Wait for download to complete
@@ -1465,7 +1466,7 @@ void FFTHandler::step3_correlation(
     
     // Post-callback (find peaks) встроен в IFFT план, выполняется автоматически
     // Извлечение пиков происходит внутри IFFT операции через clFFT callback
-    printf("  4. Post-callback (find peaks) встроен в IFFT план (выполняется автоматически)...\n");
+    DEBUG_LOG("  4. Post-callback (find peaks) встроен в IFFT план (выполняется автоматически)...\n");
     
     // Callback встроен в IFFT, его время включено в IFFT время
     time_post_callback_ms = 0.0;
@@ -1475,10 +1476,10 @@ void FFTHandler::step3_correlation(
     if (event_ifft) clReleaseEvent(event_ifft);
     if (event_download) clReleaseEvent(event_download);
     
-    printf("\n[OK] Step 3 completed!\n");
-    printf("  Output: %d × %d × %d correlations\n",
+    INFO_LOG("\n[OK] Step 3 completed!\n");
+    DEBUG_LOG("  Output: %d × %d × %d correlations\n",
            num_signals, num_shifts, n_kg);
-    printf("  Ready for results analysis\n\n");
+    DEBUG_LOG("  Ready for results analysis\n\n");
 }
 
 // ============================================================================
@@ -1512,32 +1513,32 @@ void FFTHandler::cleanup() {
     return;
   // ✅ ЗАЩИТА 1: Если уже вычищено - не трогаем!
   if (ctx_.is_cleaned_up) {
-    printf("[FFT] Already cleaned up, skipping...\n");
+    DEBUG_LOG("[FFT] Already cleaned up, skipping...\n");
     return;  // ← ВЫХОД ЗДЕСЬ!
   }
     
   // ✅ ЗАЩИТА 2: Если не инициализировано - не трогаем!
   if (!ctx_.initialized) {
-    printf("[FFT] Not initialized, skipping cleanup\n");
+    DEBUG_LOG("[FFT] Not initialized, skipping cleanup\n");
     return;  // ← ВЫХОД ЗДЕСЬ!
   }
     
 
-    printf("[FFT] Cleaning up GPU resources...\n");
+    INFO_LOG("[FFT] Cleaning up GPU resources...\n");
     
     // ========================================================================
     // 1. DESTROY FFT PLANS FIRST (ВАЖНО!)
     // ========================================================================
         
         
-    printf("  1. Destroying FFT plans...\n");
+    DEBUG_LOG("  1. Destroying FFT plans...\n");
     
     if (ctx_.reference_fft_plan) {
         clfftStatus status = clfftDestroyPlan(&ctx_.reference_fft_plan);
         if (status == CLFFT_SUCCESS) {
-            printf("     ✓ Reference FFT plan destroyed\n");
+            DEBUG_LOG("     ✓ Reference FFT plan destroyed\n");
         } else {
-            printf("     ✗ Failed to destroy reference FFT plan (code: %d)\n", status);
+            WARNING_LOG("Failed to destroy reference FFT plan (code: %d)\n", status);
         }
         ctx_.reference_fft_plan = 0;
     }
@@ -1545,9 +1546,9 @@ void FFTHandler::cleanup() {
     if (ctx_.input_fft_plan) {
         clfftStatus status = clfftDestroyPlan(&ctx_.input_fft_plan);
         if (status == CLFFT_SUCCESS) {
-            printf("     ✓ Input FFT plan destroyed\n");
+            DEBUG_LOG("     ✓ Input FFT plan destroyed\n");
         } else {
-            printf("     ✗ Failed to destroy input FFT plan (code: %d)\n", status);
+            WARNING_LOG("Failed to destroy input FFT plan (code: %d)\n", status);
         }
         ctx_.input_fft_plan = 0;
     }
@@ -1555,9 +1556,9 @@ void FFTHandler::cleanup() {
     if (ctx_.correlation_ifft_plan) {
         clfftStatus status = clfftDestroyPlan(&ctx_.correlation_ifft_plan);
         if (status == CLFFT_SUCCESS) {
-            printf("     ✓ Correlation IFFT plan destroyed\n");
+            DEBUG_LOG("     ✓ Correlation IFFT plan destroyed\n");
         } else {
-            printf("     ✗ Failed to destroy correlation IFFT plan (code: %d)\n", status);
+            WARNING_LOG("Failed to destroy correlation IFFT plan (code: %d)\n", status);
         }
         ctx_.correlation_ifft_plan = 0;
     }
@@ -1566,26 +1567,26 @@ void FFTHandler::cleanup() {
     // 1.5. TEARDOWN clFFT LIBRARY (После уничтожения всех планов!)
     // ========================================================================
     
-    printf("  1.5. Tearing down clFFT library...\n");
+    DEBUG_LOG("  1.5. Tearing down clFFT library...\n");
     clfftStatus teardown_status = clfftTeardown();
     if (teardown_status == CLFFT_SUCCESS) {
-        printf("     ✓ clFFT library torn down\n");
+        DEBUG_LOG("     ✓ clFFT library torn down\n");
     } else {
-        printf("     ✗ Failed to teardown clFFT library (code: %d)\n", teardown_status);
+        WARNING_LOG("Failed to teardown clFFT library (code: %d)\n", teardown_status);
     }
     
     // ========================================================================
     // 2. RELEASE GPU MEMORY BUFFERS (После разрушения планов!)
     // ========================================================================
     
-    printf("  2. Releasing GPU memory buffers...\n");
+    DEBUG_LOG("  2. Releasing GPU memory buffers...\n");
     
     if (ctx_.reference_data) {
         cl_int status = clReleaseMemObject(ctx_.reference_data);
         if (status == CL_SUCCESS) {
-            printf("     ✓ Reference data buffer released\n");
+            DEBUG_LOG("     ✓ Reference data buffer released\n");
         } else {
-            printf("     ✗ Failed to release reference data (code: %d)\n", status);
+            WARNING_LOG("Failed to release reference data (code: %d)\n", status);
         }
         ctx_.reference_data = nullptr;
     }
@@ -1593,9 +1594,9 @@ void FFTHandler::cleanup() {
     if (ctx_.reference_fft) {
         cl_int status = clReleaseMemObject(ctx_.reference_fft);
         if (status == CL_SUCCESS) {
-            printf("     ✓ Reference FFT buffer released\n");
+            DEBUG_LOG("     ✓ Reference FFT buffer released\n");
         } else {
-            printf("     ✗ Failed to release reference FFT (code: %d)\n", status);
+            WARNING_LOG("Failed to release reference FFT (code: %d)\n", status);
         }
         ctx_.reference_fft = nullptr;
     }
@@ -1603,9 +1604,9 @@ void FFTHandler::cleanup() {
     if (ctx_.input_data) {
         cl_int status = clReleaseMemObject(ctx_.input_data);
         if (status == CL_SUCCESS) {
-            printf("     ✓ Input data buffer released\n");
+            DEBUG_LOG("     ✓ Input data buffer released\n");
         } else {
-            printf("     ✗ Failed to release input data (code: %d)\n", status);
+            WARNING_LOG("Failed to release input data (code: %d)\n", status);
         }
         ctx_.input_data = nullptr;
     }
@@ -1613,9 +1614,9 @@ void FFTHandler::cleanup() {
     if (ctx_.input_fft) {
         cl_int status = clReleaseMemObject(ctx_.input_fft);
         if (status == CL_SUCCESS) {
-            printf("     ✓ Input FFT buffer released\n");
+            DEBUG_LOG("     ✓ Input FFT buffer released\n");
         } else {
-            printf("     ✗ Failed to release input FFT (code: %d)\n", status);
+            WARNING_LOG("Failed to release input FFT (code: %d)\n", status);
         }
         ctx_.input_fft = nullptr;
     }
@@ -1623,9 +1624,9 @@ void FFTHandler::cleanup() {
     if (ctx_.correlation_fft) {
         cl_int status = clReleaseMemObject(ctx_.correlation_fft);
         if (status == CL_SUCCESS) {
-            printf("     ✓ Correlation FFT buffer released\n");
+            DEBUG_LOG("     ✓ Correlation FFT buffer released\n");
         } else {
-            printf("     ✗ Failed to release correlation FFT (code: %d)\n", status);
+            WARNING_LOG("Failed to release correlation FFT (code: %d)\n", status);
         }
         ctx_.correlation_fft = nullptr;
     }
@@ -1633,9 +1634,9 @@ void FFTHandler::cleanup() {
     if (ctx_.correlation_ifft) {
         cl_int status = clReleaseMemObject(ctx_.correlation_ifft);
         if (status == CL_SUCCESS) {
-            printf("     ✓ Correlation IFFT buffer released\n");
+            DEBUG_LOG("     ✓ Correlation IFFT buffer released\n");
         } else {
-            printf("     ✗ Failed to release correlation IFFT (code: %d)\n", status);
+            WARNING_LOG("Failed to release correlation IFFT (code: %d)\n", status);
         }
         ctx_.correlation_ifft = nullptr;
     }
@@ -1643,9 +1644,9 @@ void FFTHandler::cleanup() {
     if (ctx_.pre_callback_userdata) {
         cl_int status = clReleaseMemObject(ctx_.pre_callback_userdata);
         if (status == CL_SUCCESS) {
-            printf("     ✓ Pre-callback userdata buffer released\n");
+            DEBUG_LOG("     ✓ Pre-callback userdata buffer released\n");
         } else {
-            printf("     ✗ Failed to release pre-callback userdata (code: %d)\n", status);
+            WARNING_LOG("Failed to release pre-callback userdata (code: %d)\n", status);
         }
         ctx_.pre_callback_userdata = nullptr;
     }
@@ -1653,9 +1654,9 @@ void FFTHandler::cleanup() {
     if (ctx_.post_callback_userdata) {
         cl_int status = clReleaseMemObject(ctx_.post_callback_userdata);
         if (status == CL_SUCCESS) {
-            printf("     ✓ Post-callback userdata buffer released\n");
+            DEBUG_LOG("     ✓ Post-callback userdata buffer released\n");
         } else {
-            printf("     ✗ Failed to release post-callback userdata (code: %d)\n", status);
+            WARNING_LOG("Failed to release post-callback userdata (code: %d)\n", status);
         }
         ctx_.post_callback_userdata = nullptr;
     }
@@ -1667,7 +1668,7 @@ void FFTHandler::cleanup() {
     ctx_.initialized = false;
     ctx_.is_cleaned_up = true;  // ← СТАВИМ ФЛАГ!
     
-    printf("[OK] GPU cleanup complete!\n\n");
+    INFO_LOG("[OK] GPU cleanup complete!\n\n");
 }
 
 // ============================================================================
@@ -1676,23 +1677,23 @@ void FFTHandler::cleanup() {
 
 bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shifts, size_t fft_size) const {
     if (!ctx_.initialized) {
-        fprintf(stderr, "ERROR: getReferenceFFTData - FFT handler not initialized\n");
+        ERROR_LOG("getReferenceFFTData - FFT handler not initialized\n");
         return false;
     }
     
     if (!ctx_.reference_fft) {
-        fprintf(stderr, "ERROR: getReferenceFFTData - reference_fft buffer is null\n");
+        ERROR_LOG("getReferenceFFTData - reference_fft buffer is null\n");
         return false;
     }
     
     if (!ctx_.queue) {
-        fprintf(stderr, "ERROR: getReferenceFFTData - command queue is null\n");
+        ERROR_LOG("getReferenceFFTData - command queue is null\n");
         return false;
     }
     
     // Проверить, что handler не был очищен
     if (ctx_.is_cleaned_up) {
-        fprintf(stderr, "ERROR: getReferenceFFTData - FFT handler already cleaned up\n");
+        ERROR_LOG("getReferenceFFTData - FFT handler already cleaned up\n");
         return false;
     }
     
@@ -1703,15 +1704,15 @@ bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shi
     
     // Проверить, что переданные параметры совпадают с сохраненными (для отладки)
     if (num_shifts != actual_num_shifts || fft_size != actual_fft_size) {
-        fprintf(stderr, "WARNING: getReferenceFFTData - parameter mismatch!\n");
-        fprintf(stderr, "  Passed: num_shifts=%d, fft_size=%zu\n", num_shifts, fft_size);
-        fprintf(stderr, "  Actual: num_shifts=%d, fft_size=%zu\n", actual_num_shifts, actual_fft_size);
-        fprintf(stderr, "  Using actual values from initialize()\n");
+        WARNING_LOG("getReferenceFFTData - parameter mismatch!\n");
+        VERBOSE_LOG("  Passed: num_shifts=%d, fft_size=%zu\n", num_shifts, fft_size);
+        VERBOSE_LOG("  Actual: num_shifts=%d, fft_size=%zu\n", actual_num_shifts, actual_fft_size);
+        VERBOSE_LOG("  Using actual values from initialize()\n");
     }
     
     // Проверить валидность контекста перед использованием
     if (!ctx_.context) {
-        fprintf(stderr, "ERROR: getReferenceFFTData - context is null\n");
+        ERROR_LOG("getReferenceFFTData - context is null\n");
         return false;
     }
     
@@ -1723,20 +1724,20 @@ bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shi
     size_t actual_buffer_size = 0;
     cl_int err = clGetMemObjectInfo(ctx_.reference_fft, CL_MEM_SIZE, sizeof(size_t), &actual_buffer_size, nullptr);
     if (err != CL_SUCCESS) {
-        fprintf(stderr, "ERROR: clGetMemObjectInfo failed with code %d - buffer may be invalid\n", err);
-        fprintf(stderr, "  This usually means the buffer was released or the context is invalid\n");
+        ERROR_LOG("clGetMemObjectInfo failed with code %d - buffer may be invalid\n", err);
+        ERROR_LOG("This usually means the buffer was released or the context is invalid\n");
         return false;
     }
     
     // Диагностика размеров
-    fprintf(stderr, "[DEBUG] getReferenceFFTData buffer sizes:\n");
-    fprintf(stderr, "  Expected: num_shifts=%d, fft_size=%zu, data_size=%zu, buffer_size=%zu bytes\n",
+    VERBOSE_LOG("[DEBUG] getReferenceFFTData buffer sizes:\n");
+    VERBOSE_LOG("  Expected: num_shifts=%d, fft_size=%zu, data_size=%zu, buffer_size=%zu bytes\n",
             actual_num_shifts, actual_fft_size, expected_data_size, expected_buffer_size);
-    fprintf(stderr, "  Actual buffer size: %zu bytes\n", actual_buffer_size);
-    fprintf(stderr, "  Size match: %s\n", (expected_buffer_size == actual_buffer_size) ? "YES" : "NO");
+    VERBOSE_LOG("  Actual buffer size: %zu bytes\n", actual_buffer_size);
+    VERBOSE_LOG("  Size match: %s\n", (expected_buffer_size == actual_buffer_size) ? "YES" : "NO");
     
     if (expected_buffer_size > actual_buffer_size) {
-        fprintf(stderr, "ERROR: Expected buffer size (%zu) exceeds actual buffer size (%zu)\n", 
+        ERROR_LOG("Expected buffer size (%zu) exceeds actual buffer size (%zu)\n", 
                 expected_buffer_size, actual_buffer_size);
         return false;
     }
@@ -1747,9 +1748,9 @@ bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shi
     size_t data_size = actual_buffer_size / sizeof(cl_float2);
     
     if (expected_buffer_size != actual_buffer_size) {
-        fprintf(stderr, "WARNING: Buffer size mismatch! Using actual buffer size.\n");
-        fprintf(stderr, "  Expected: %zu bytes, Actual: %zu bytes\n", expected_buffer_size, actual_buffer_size);
-        fprintf(stderr, "  This may indicate clFFT padding or buffer size changes\n");
+        WARNING_LOG("Buffer size mismatch! Using actual buffer size.\n");
+        VERBOSE_LOG("  Expected: %zu bytes, Actual: %zu bytes\n", expected_buffer_size, actual_buffer_size);
+        VERBOSE_LOG("  This may indicate clFFT padding or buffer size changes\n");
     }
     
     output.resize(data_size);
@@ -1758,13 +1759,13 @@ bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shi
     cl_context buffer_context = nullptr;
     err = clGetMemObjectInfo(ctx_.reference_fft, CL_MEM_CONTEXT, sizeof(cl_context), &buffer_context, nullptr);
     if (err != CL_SUCCESS) {
-        fprintf(stderr, "ERROR: clGetMemObjectInfo(CL_MEM_CONTEXT) failed with code %d\n", err);
+        ERROR_LOG("clGetMemObjectInfo(CL_MEM_CONTEXT) failed with code %d\n", err);
         return false;
     }
     
     if (buffer_context != ctx_.context) {
-        fprintf(stderr, "ERROR: getReferenceFFTData - buffer context mismatch!\n");
-        fprintf(stderr, "  Buffer context: %p, Handler context: %p\n", buffer_context, ctx_.context);
+        ERROR_LOG("getReferenceFFTData - buffer context mismatch!\n");
+        VERBOSE_LOG("  Buffer context: %p, Handler context: %p\n", buffer_context, ctx_.context);
         return false;
     }
     
@@ -1772,7 +1773,7 @@ bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shi
     // clEnqueueReadBuffer с CL_TRUE сам подождет завершения операций
     // Но если очередь невалидна, это не сработает
     if (!ctx_.queue) {
-        fprintf(stderr, "ERROR: getReferenceFFTData - command queue is null\n");
+        ERROR_LOG("getReferenceFFTData - command queue is null\n");
         return false;
     }
     
@@ -1780,11 +1781,11 @@ bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shi
     cl_context queue_context = nullptr;
     err = clGetCommandQueueInfo(ctx_.queue, CL_QUEUE_CONTEXT, sizeof(cl_context), &queue_context, nullptr);
     if (err != CL_SUCCESS) {
-        fprintf(stderr, "WARNING: clGetCommandQueueInfo failed with code %d - queue may be invalid\n", err);
+        WARNING_LOG("clGetCommandQueueInfo failed with code %d - queue may be invalid\n", err);
         // Если не можем проверить контекст очереди, но очередь не nullptr, попробуем использовать
     } else if (queue_context != ctx_.context) {
-        fprintf(stderr, "ERROR: getReferenceFFTData - queue context mismatch!\n");
-        fprintf(stderr, "  Queue context: %p, Handler context: %p\n", queue_context, ctx_.context);
+        ERROR_LOG("getReferenceFFTData - queue context mismatch!\n");
+        VERBOSE_LOG("  Queue context: %p, Handler context: %p\n", queue_context, ctx_.context);
         return false;
     }
     
@@ -1801,23 +1802,23 @@ bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shi
     );
     
     if (err != CL_SUCCESS) {
-        fprintf(stderr, "ERROR: clEnqueueReadBuffer failed with code %d\n", err);
+        ERROR_LOG("clEnqueueReadBuffer failed with code %d\n", err);
         if (err == CL_INVALID_MEM_OBJECT) {
-            fprintf(stderr, "  CL_INVALID_MEM_OBJECT (-5): Buffer is invalid or was released\n");
-            fprintf(stderr, "  Possible causes:\n");
-            fprintf(stderr, "    1. Buffer was released in cleanup()\n");
-            fprintf(stderr, "    2. Context was released\n");
-            fprintf(stderr, "    3. clFFT uses internal buffers (unlikely with CLFFT_OUTOFPLACE)\n");
+            ERROR_LOG("  CL_INVALID_MEM_OBJECT (-5): Buffer is invalid or was released\n");
+            VERBOSE_LOG("  Possible causes:\n");
+            VERBOSE_LOG("    1. Buffer was released in cleanup()\n");
+            VERBOSE_LOG("    2. Context was released\n");
+            VERBOSE_LOG("    3. clFFT uses internal buffers (unlikely with CLFFT_OUTOFPLACE)\n");
         } else if (err == CL_INVALID_COMMAND_QUEUE) {
-            fprintf(stderr, "  CL_INVALID_COMMAND_QUEUE (-36): Command queue is invalid\n");
-            fprintf(stderr, "  Possible causes:\n");
-            fprintf(stderr, "    1. Queue was released in cleanup()\n");
-            fprintf(stderr, "    2. Context was released\n");
-            fprintf(stderr, "    3. Queue belongs to different context\n");
+            ERROR_LOG("  CL_INVALID_COMMAND_QUEUE (-36): Command queue is invalid\n");
+            VERBOSE_LOG("  Possible causes:\n");
+            VERBOSE_LOG("    1. Queue was released in cleanup()\n");
+            VERBOSE_LOG("    2. Context was released\n");
+            VERBOSE_LOG("    3. Queue belongs to different context\n");
         }
-        fprintf(stderr, "  Actual buffer size: %zu bytes, Requested: %zu bytes\n", actual_buffer_size, buffer_size);
-        fprintf(stderr, "  num_shifts: %d, fft_size: %zu\n", actual_num_shifts, actual_fft_size);
-        fprintf(stderr, "  Context valid: %s, Queue valid: %s, Buffer valid: %s\n", 
+        VERBOSE_LOG("  Actual buffer size: %zu bytes, Requested: %zu bytes\n", actual_buffer_size, buffer_size);
+        VERBOSE_LOG("  num_shifts: %d, fft_size: %zu\n", actual_num_shifts, actual_fft_size);
+        VERBOSE_LOG("  Context valid: %s, Queue valid: %s, Buffer valid: %s\n", 
                 ctx_.context ? "yes" : "no", 
                 ctx_.queue ? "yes" : "no",
                 ctx_.reference_fft ? "yes" : "no");
@@ -1829,18 +1830,18 @@ bool FFTHandler::getReferenceFFTData(std::vector<cl_float2>& output, int num_shi
 
 bool FFTHandler::getInputFFTData(std::vector<cl_float2>& output, int num_signals, size_t fft_size) const {
     if (!ctx_.initialized || !ctx_.input_fft) {
-        fprintf(stderr, "ERROR: getInputFFTData - not initialized or buffer is null\n");
+        ERROR_LOG("getInputFFTData - not initialized or buffer is null\n");
         return false;
     }
     
     if (!ctx_.queue) {
-        fprintf(stderr, "ERROR: getInputFFTData - command queue is null\n");
+        ERROR_LOG("getInputFFTData - command queue is null\n");
         return false;
     }
     
     // Проверить, что handler не был очищен
     if (ctx_.is_cleaned_up) {
-        fprintf(stderr, "ERROR: getInputFFTData - FFT handler already cleaned up\n");
+        ERROR_LOG("getInputFFTData - FFT handler already cleaned up\n");
         return false;
     }
     
@@ -1850,15 +1851,15 @@ bool FFTHandler::getInputFFTData(std::vector<cl_float2>& output, int num_signals
     
     // Проверить, что переданные параметры совпадают с сохраненными (для отладки)
     if (num_signals != actual_num_signals || fft_size != actual_fft_size) {
-        fprintf(stderr, "WARNING: getInputFFTData - parameter mismatch!\n");
-        fprintf(stderr, "  Passed: num_signals=%d, fft_size=%zu\n", num_signals, fft_size);
-        fprintf(stderr, "  Actual: num_signals=%d, fft_size=%zu\n", actual_num_signals, actual_fft_size);
-        fprintf(stderr, "  Using actual values from initialize()\n");
+        WARNING_LOG("getInputFFTData - parameter mismatch!\n");
+        VERBOSE_LOG("  Passed: num_signals=%d, fft_size=%zu\n", num_signals, fft_size);
+        VERBOSE_LOG("  Actual: num_signals=%d, fft_size=%zu\n", actual_num_signals, actual_fft_size);
+        VERBOSE_LOG("  Using actual values from initialize()\n");
     }
     
     // Проверить валидность контекста перед использованием
     if (!ctx_.context) {
-        fprintf(stderr, "ERROR: getInputFFTData - context is null\n");
+        ERROR_LOG("getInputFFTData - context is null\n");
         return false;
     }
     
@@ -1870,20 +1871,20 @@ bool FFTHandler::getInputFFTData(std::vector<cl_float2>& output, int num_signals
     size_t actual_buffer_size = 0;
     cl_int err = clGetMemObjectInfo(ctx_.input_fft, CL_MEM_SIZE, sizeof(size_t), &actual_buffer_size, nullptr);
     if (err != CL_SUCCESS) {
-        fprintf(stderr, "ERROR: clGetMemObjectInfo failed with code %d - buffer may be invalid\n", err);
-        fprintf(stderr, "  This usually means the buffer was released or the context is invalid\n");
+        ERROR_LOG("clGetMemObjectInfo failed with code %d - buffer may be invalid\n", err);
+        ERROR_LOG("This usually means the buffer was released or the context is invalid\n");
         return false;
     }
     
     // Диагностика размеров
-    fprintf(stderr, "[DEBUG] getInputFFTData buffer sizes:\n");
-    fprintf(stderr, "  Expected: num_signals=%d, fft_size=%zu, data_size=%zu, buffer_size=%zu bytes\n",
+    VERBOSE_LOG("[DEBUG] getInputFFTData buffer sizes:\n");
+    VERBOSE_LOG("  Expected: num_signals=%d, fft_size=%zu, data_size=%zu, buffer_size=%zu bytes\n",
             actual_num_signals, actual_fft_size, expected_data_size, expected_buffer_size);
-    fprintf(stderr, "  Actual buffer size: %zu bytes\n", actual_buffer_size);
-    fprintf(stderr, "  Size match: %s\n", (expected_buffer_size == actual_buffer_size) ? "YES" : "NO");
+    VERBOSE_LOG("  Actual buffer size: %zu bytes\n", actual_buffer_size);
+    VERBOSE_LOG("  Size match: %s\n", (expected_buffer_size == actual_buffer_size) ? "YES" : "NO");
     
     if (expected_buffer_size > actual_buffer_size) {
-        fprintf(stderr, "ERROR: Expected buffer size (%zu) exceeds actual buffer size (%zu)\n", 
+        ERROR_LOG("Expected buffer size (%zu) exceeds actual buffer size (%zu)\n", 
                 expected_buffer_size, actual_buffer_size);
         return false;
     }
@@ -1893,9 +1894,9 @@ bool FFTHandler::getInputFFTData(std::vector<cl_float2>& output, int num_signals
     size_t data_size = actual_buffer_size / sizeof(cl_float2);
     
     if (expected_buffer_size != actual_buffer_size) {
-        fprintf(stderr, "WARNING: Buffer size mismatch! Using actual buffer size.\n");
-        fprintf(stderr, "  Expected: %zu bytes, Actual: %zu bytes\n", expected_buffer_size, actual_buffer_size);
-        fprintf(stderr, "  This may indicate clFFT padding or buffer size changes\n");
+        WARNING_LOG("Buffer size mismatch! Using actual buffer size.\n");
+        VERBOSE_LOG("  Expected: %zu bytes, Actual: %zu bytes\n", expected_buffer_size, actual_buffer_size);
+        VERBOSE_LOG("  This may indicate clFFT padding or buffer size changes\n");
     }
     
     output.resize(data_size);
@@ -1912,14 +1913,14 @@ bool FFTHandler::getInputFFTData(std::vector<cl_float2>& output, int num_signals
     );
     
     if (err != CL_SUCCESS) {
-        fprintf(stderr, "ERROR: clEnqueueReadBuffer failed with code %d\n", err);
+        ERROR_LOG("clEnqueueReadBuffer failed with code %d\n", err);
         if (err == CL_INVALID_MEM_OBJECT) {
-            fprintf(stderr, "  CL_INVALID_MEM_OBJECT (-5): Buffer is invalid or was released\n");
+            ERROR_LOG("  CL_INVALID_MEM_OBJECT (-5): Buffer is invalid or was released\n");
         } else if (err == CL_INVALID_COMMAND_QUEUE) {
-            fprintf(stderr, "  CL_INVALID_COMMAND_QUEUE (-36): Command queue is invalid\n");
+            ERROR_LOG("  CL_INVALID_COMMAND_QUEUE (-36): Command queue is invalid\n");
         }
-        fprintf(stderr, "  Actual buffer size: %zu bytes, Requested: %zu bytes\n", actual_buffer_size, buffer_size);
-        fprintf(stderr, "  num_signals: %d, fft_size: %zu\n", actual_num_signals, actual_fft_size);
+        VERBOSE_LOG("  Actual buffer size: %zu bytes, Requested: %zu bytes\n", actual_buffer_size, buffer_size);
+        VERBOSE_LOG("  num_signals: %d, fft_size: %zu\n", actual_num_signals, actual_fft_size);
         return false;
     }
     

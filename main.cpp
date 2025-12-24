@@ -1,7 +1,9 @@
 #include "include/correlator/Correlator.hpp"
 #include "include/correlator/OpenCLFFTBackend.hpp"
 #include "include/profiler.hpp"
+#include "include/debug_log.hpp"
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <cstdint>
 #include <map>
@@ -31,22 +33,17 @@ std::vector<int32_t> generateMSequence(size_t length, uint32_t seed = 0x1) {
 }
 
 int main() {
-    std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     FFT CORRELATOR - Пример использования архитектуры       ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════════╝\n\n";
+    COUT_LOG("╔══════════════════════════════════════════════════════════════╗\n");
+    COUT_LOG("║     FFT CORRELATOR - Пример использования архитектуры       ║\n");
+    COUT_LOG("╚══════════════════════════════════════════════════════════════╝\n\n");
 
     // Инициализация профилировщика
     Profiler profiler;
 
     try {
         // 1. Создать конфигурацию
-        std::cout << "[1] Создание конфигурации...\n";
+        COUT_LOG("[1] Создание конфигурации...\n");
         auto config = IConfiguration::createDefault();
-
-//        config->setFFTSize(32768);      // 2^15
-        // config->setNumShifts(40);
-        // config->setNumSignals(50);
-        // config->setNumOutputPoints(5);
 
         //  работало  _ = 1<<18;   config->setNumShifts(10);  // 32
         auto xx_ = 1<<15;
@@ -61,10 +58,10 @@ int main() {
             std::cerr << "Ошибка валидации конфигурации: " << config->getValidationErrors() << "\n";
             return 1;
         }
-        std::cout << "✓ Конфигурация создана и валидирована\n\n";
+        COUT_LOG("✓ Конфигурация создана и валидирована\n\n");
 
         // 2. Создать бэкенд (OpenCL)
-        std::cout << "[2] Создание OpenCL бэкенда...\n";
+        COUT_LOG("[2] Создание OpenCL бэкенда...\n");
         auto backend = IFFTBackend::createOpenCLBackend();
 
         // Установить конфигурацию в бэкенд
@@ -78,7 +75,7 @@ int main() {
                 config->getScaleFactor()
             );
         }
-        std::cout << "✓ Бэкенд создан\n\n";
+        COUT_LOG("✓ Бэкенд создан\n\n");
 
         // 3. Сохранить значения конфигурации перед созданием pipeline
         size_t fft_size = config->getFFTSize();
@@ -87,7 +84,7 @@ int main() {
         int num_output_points = config->getNumOutputPoints();
         
         // 4. Подготовить данные (используем значения из конфигурации)
-        std::cout << "[4] Генерация тестовых данных...\n";
+        COUT_LOG("[4] Генерация тестовых данных...\n");
         std::vector<int32_t> reference_signal = generateMSequence(fft_size);
 
         std::vector<int32_t> input_signals;
@@ -96,30 +93,30 @@ int main() {
             auto signal = generateMSequence(fft_size, 0x1 + i);
             input_signals.insert(input_signals.end(), signal.begin(), signal.end());
         }
-        std::cout << "✓ Данные сгенерированы\n\n";
+        COUT_LOG("✓ Данные сгенерированы\n\n");
 
         // 4.5. Создать exporter для экспорта Step0 (и использования в pipeline)
-        std::cout << "[4.5] Создание exporter...\n";
+        COUT_LOG("[4.5] Создание exporter...\n");
         auto exporter = IResultExporter::createDefault();
         
         // Экспорт M-последовательности (Step0)
         exporter->exportStep0(reference_signal, input_signals, *config);
-        std::cout << "✓ Step0 данные экспортированы\n\n";
+        COUT_LOG("✓ Step0 данные экспортированы\n\n");
 
         // 5. Создать pipeline
-        std::cout << "[5] Создание CorrelationPipeline...\n";
+        COUT_LOG("[5] Создание CorrelationPipeline...\n");
         CorrelationPipeline pipeline(std::move(backend), std::move(config));
         
         // Установить тот же exporter в pipeline для использования одного timestamp каталога
         pipeline.setExporter(std::move(exporter));
         const auto& config_ref = pipeline.getConfiguration();
-        std::cout << "✓ Pipeline создан\n\n";
+        COUT_LOG("✓ Pipeline создан\n\n");
 
         // 6. Выполнить весь pipeline с профилированием каждого шага
-        std::cout << "[6] Выполнение полного pipeline...\n";
-        std::cout << "   Step 1: Reference FFT\n";
-        std::cout << "   Step 2: Input FFT\n";
-        std::cout << "   Step 3: Correlation\n\n";
+        COUT_LOG("[6] Выполнение полного pipeline...\n");
+        COUT_LOG("   Step 1: Reference FFT\n");
+        COUT_LOG("   Step 2: Input FFT\n");
+        COUT_LOG("   Step 3: Correlation\n\n");
 
         // Инициализация pipeline
         if (!pipeline.initialize()) {
@@ -152,41 +149,53 @@ int main() {
         }
         profiler.stop("Step3_Total", Profiler::MILLISECONDS);
 
-        std::cout << "✓ Pipeline выполнен успешно\n\n";
+        COUT_LOG("✓ Pipeline выполнен успешно\n\n");
 
         // 6. Получить результаты
-        std::cout << "[6] Получение результатов...\n";
+        COUT_LOG("[6] Получение результатов...\n");
         const auto& snapshot = pipeline.getSnapshot();
         const auto& peaks = snapshot.getPeaks();
 
-        std::cout << "✓ Получено " << peaks.size() << " пиков\n";
-        std::cout << "   Формат: [" << config_ref.getNumSignals() << " сигналов]["
-                  << config_ref.getNumShifts() << " сдвигов][" 
-                  << config_ref.getNumOutputPoints() << " точек] = "
-                  << (config_ref.getNumSignals() * config_ref.getNumShifts() * config_ref.getNumOutputPoints()) 
-                  << " значений\n\n";
+        {
+            std::ostringstream oss;
+            oss << "✓ Получено " << peaks.size() << " пиков\n";
+            COUT_LOG(oss.str());
+        }
+        {
+            std::ostringstream oss;
+            oss << "   Формат: [" << config_ref.getNumSignals() << " сигналов]["
+                << config_ref.getNumShifts() << " сдвигов][" 
+                << config_ref.getNumOutputPoints() << " точек] = "
+                << (config_ref.getNumSignals() * config_ref.getNumShifts() * config_ref.getNumOutputPoints()) 
+                << " значений\n\n";
+            COUT_LOG(oss.str());
+        }
 
         // 7. Экспорт в JSON (уже выполнен автоматически на каждом этапе)
-        std::cout << "[7] JSON файлы сохранены в Report/Validation/\n";
-        std::cout << "   - validation_step1_*.json\n";
-        std::cout << "   - validation_step2_*.json\n";
-        std::cout << "   - validation_step3_*.json\n";
-        std::cout << "   - final_report_*.json\n\n";
+        COUT_LOG("[7] JSON файлы сохранены в Report/Validation/\n");
+        COUT_LOG("   - validation_step1_*.json\n");
+        COUT_LOG("   - validation_step2_*.json\n");
+        COUT_LOG("   - validation_step3_*.json\n");
+        COUT_LOG("   - final_report_*.json\n\n");
 
         // 8. Получить информацию о GPU
-        std::cout << "[8] Информация о GPU:\n";
+        COUT_LOG("[8] Информация о GPU:\n");
         const auto& backend_info = pipeline.getBackend();
-        std::cout << "   Платформа: " << backend_info.getPlatformName() << "\n";
-        std::cout << "   Устройство: " << backend_info.getDeviceName() << "\n";
-        std::cout << "   Драйвер: " << backend_info.getDriverVersion() << "\n";
-        std::cout << "   API: " << backend_info.getAPIVersion() << "\n\n";
+        {
+            std::ostringstream oss;
+            oss << "   Платформа: " << backend_info.getPlatformName() << "\n"
+                << "   Устройство: " << backend_info.getDeviceName() << "\n"
+                << "   Драйвер: " << backend_info.getDriverVersion() << "\n"
+                << "   API: " << backend_info.getAPIVersion() << "\n\n";
+            COUT_LOG(oss.str());
+        }
 
-        std::cout << "═══════════════════════════════════════════════════════════\n";
-        std::cout << "✨ ВСЕ ЭТАПЫ ВЫПОЛНЕНЫ УСПЕШНО! ✨\n";
-        std::cout << "═══════════════════════════════════════════════════════════\n\n";
+        COUT_LOG("═══════════════════════════════════════════════════════════\n");
+        COUT_LOG("✨ ВСЕ ЭТАПЫ ВЫПОЛНЕНЫ УСПЕШНО! ✨\n");
+        COUT_LOG("═══════════════════════════════════════════════════════════\n\n");
 
         // Экспорт и вывод результатов профилирования
-        std::cout << "[PROFILER] Экспорт отчета профилирования...\n";
+        COUT_LOG("[PROFILER] Экспорт отчета профилирования...\n");
         
         // Получить OperationTiming данные из pipeline
         OperationTiming step1_upload, step1_fft;
@@ -246,22 +255,22 @@ int main() {
 
         // Экспорт в Markdown
         if (profiler.export_to_markdown("Report/profiling_report.md", step_details, gpu_info, config_params)) {
-            std::cout << "✓ Отчет профилирования сохранен: Report/profiling_report.md\n";
+            COUT_LOG("✓ Отчет профилирования сохранен: Report/profiling_report.md\n");
         } else {
-            std::cout << "⚠️ Не удалось сохранить отчет профилирования\n";
+            COUT_LOG("⚠️ Не удалось сохранить отчет профилирования\n");
         }
 
         // Экспорт в JSON
         if (profiler.export_to_json("Report/profiling_report.json", step_details, gpu_info)) {
-            std::cout << "✓ JSON отчет профилирования сохранен: Report/JSON/profiling_report.json\n";
+            COUT_LOG("✓ JSON отчет профилирования сохранен: Report/JSON/profiling_report.json\n");
         } else {
-            std::cout << "⚠️ Не удалось сохранить JSON отчет профилирования\n";
+            COUT_LOG("⚠️ Не удалось сохранить JSON отчет профилирования\n");
         }
 
-        std::cout << "[PROFILER] Результаты профилирования:\n";
+        COUT_LOG("[PROFILER] Результаты профилирования:\n");
         profiler.print_all("FFT CORRELATOR PROFILING RESULTS");
 
-        std::cout << "✓ Профилирование завершено\n";
+        COUT_LOG("✓ Профилирование завершено\n");
 
         return 0;
 

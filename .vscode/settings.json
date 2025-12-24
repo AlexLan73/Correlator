@@ -2,6 +2,13 @@
   "cmake.configureOnOpen": false,
   "cmake.sourceDirectory": "${workspaceFolder}",
   "cmake.buildDirectory": "${workspaceFolder}/build",
+  "cmake.defaultVariants": {
+    "buildType": {
+      "default": "release",
+      "description": "The build type to use"
+    }
+  },
+  "cmake.buildType": "Release",
   "[cpp]": {
     "editor.defaultFormatter": "ms-vscode.cpptools",
     "editor.formatOnSave": false

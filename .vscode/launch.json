@@ -9,7 +9,12 @@
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [],
+            "environment": [
+                {
+                    "name": "CMAKE_BUILD_TYPE",
+                    "value": "Release"
+                }
+            ],
             "externalConsole": false,
             "MIMode": "gdb",
             "setupCommands": [
@@ -20,7 +25,13 @@
                 }
             ],
             "preLaunchTask": "Build (Release)",
-            "miDebuggerPath": "/usr/bin/gdb"
+            "miDebuggerPath": "/usr/bin/gdb",
+            "logging": {
+                "moduleLoad": false,
+                "trace": false,
+                "engineLogging": false
+            },
+            "comment": "Release build: DEBUG_LOG and VERBOSE_LOG are disabled. Only INFO_LOG, ERROR_LOG, and std::cout from main.cpp are shown."
         },
         {
             "name": "Launch Correlator (Debug)",

@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
+#include "debug_log.hpp"
 
 // ============================================================================
 // FFT Handler для коррелятора

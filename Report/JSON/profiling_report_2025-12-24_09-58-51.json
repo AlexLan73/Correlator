@@ -1,59 +1,59 @@
 {
   "report_info": {
     "title": "Отчет профилирования FFT Correlator",
-    "creation_date": "2025-12-24 08:30:11",
+    "creation_date": "2025-12-24 09:58:51",
     "build_mode": "Release",
-    "timestamp": "2025-12-24_08-30-11"
+    "timestamp": "2025-12-24_09-58-51"
   },
   "system_info": {
     "gpu": "NVIDIA GeForce RTX 3060",
     "driver_version": "580.105.08",
     "api_version": "OpenCL 3.0 CUDA",
-    "timestamp": "2025-12-24_08-30-11",
+    "timestamp": "2025-12-24_09-58-51",
     "note": "GPU времена измеряются от момента постановки в очередь (QUEUED) до завершения выполнения (END)"
   },
   "summary": {
-    "total_execution_time_ms": 232.188,
+    "total_execution_time_ms": 290.725,
     "profiled_operations_count": 3,
-    "gpu_execution_time_ms": 0.658
+    "gpu_execution_time_ms": 0.716
   },
   "steps": {
     "Step1": {
       "description": "Обработка опорных сигналов",
-      "total_time_ms": 141.713,
-      "gpu_time_ms": 0.077,
+      "total_time_ms": 180.039,
+      "gpu_time_ms": 0.139,
       "operations": {
-        "FFT (10) CPU wait": 0.016,
-        "FFT (10) total GPU time": 0.031,
-        "Upload CPU wait": 0.035,
-        "Upload total GPU time": 0.046,
-        "Other operations (overhead)": 141.585
+        "FFT (10) CPU wait": 0.057,
+        "FFT (10) total GPU time": 0.076,
+        "Upload CPU wait": 0.048,
+        "Upload total GPU time": 0.062,
+        "Other operations (overhead)": 179.795
       }
     },
     "Step2": {
       "description": "Обработка входных сигналов",
-      "total_time_ms": 72.852,
-      "gpu_time_ms": 0.229,
+      "total_time_ms": 89.790,
+      "gpu_time_ms": 0.217,
       "operations": {
         "FFT (5) CPU wait": 0.000,
         "FFT (5) total GPU time": 0.022,
-        "Upload CPU wait": 0.187,
-        "Upload total GPU time": 0.207,
-        "Other operations (overhead)": 72.436
+        "Upload CPU wait": 0.177,
+        "Upload total GPU time": 0.195,
+        "Other operations (overhead)": 89.396
       }
     },
     "Step3": {
       "description": "Корреляция",
-      "total_time_ms": 17.623,
-      "gpu_time_ms": 0.352,
+      "total_time_ms": 20.896,
+      "gpu_time_ms": 0.361,
       "operations": {
         "Complex multiply CPU wait": 0.078,
-        "Complex multiply total GPU time": 0.083,
-        "Download CPU wait": 0.149,
-        "Download total GPU time": 0.051,
-        "Inverse FFT (50) CPU wait": 0.211,
-        "Inverse FFT (50) total GPU time": 0.219,
-        "Other operations (overhead)": 16.833
+        "Complex multiply total GPU time": 0.084,
+        "Download CPU wait": 0.096,
+        "Download total GPU time": 0.052,
+        "Inverse FFT (50) CPU wait": 0.217,
+        "Inverse FFT (50) total GPU time": 0.225,
+        "Other operations (overhead)": 20.144
       }
     }
   }

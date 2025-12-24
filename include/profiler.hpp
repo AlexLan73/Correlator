@@ -1,6 +1,8 @@
 #ifndef PROFILER_HPP
 #define PROFILER_HPP
 
+#include "debug_log.hpp"
+
 #include <chrono>
 #include <map>
 #include <vector>
@@ -78,12 +80,12 @@ private:
             }
             
             if (measurements.size() == 1) {
-                printf("  %-40s: %10.3f %s\n", 
+                DEBUG_LOG("  %-40s: %10.3f %s\n", 
                        label.c_str(), 
                        measurements[0] / divisor,
                        unit_str);
             } else {
-                printf("  %-40s: avg=%-10.3f min=%-10.3f max=%-10.3f %s (n=%zu)\n",
+                DEBUG_LOG("  %-40s: avg=%-10.3f min=%-10.3f max=%-10.3f %s (n=%zu)\n",
                        label.c_str(),
                        get_avg() / divisor,
                        get_min() / divisor,
@@ -284,7 +286,7 @@ public:
         if (it != timings.end()) {
             it->second.print();
         } else {
-            printf("  %-40s: NOT FOUND\n", label.c_str());
+            DEBUG_LOG("  %-40s: NOT FOUND\n", label.c_str());
         }
     }
     
@@ -292,12 +294,12 @@ public:
      * Вывести все измерения с заголовком
      */
     void print_all(const std::string& title = "PROFILING RESULTS") const {
-        printf("\n");
-        printf("====== %s ======\n", title.c_str());
+        DEBUG_LOG("\n");
+        DEBUG_LOG("====== %s ======\n", title.c_str());
         for (const auto& [label, data] : timings) {
             data.print();
         }
-        printf("======== TOTAL TIME (all ops): %.3f ms ========\n\n", 
+        DEBUG_LOG("======== TOTAL TIME (all ops): %.3f ms ========\n\n", 
                get_total_all() / 1000.0);
     }
     
@@ -312,41 +314,41 @@ public:
     ) const {
         double total1 = 0.0, total2 = 0.0;
         
-        printf("\n");
-        printf("========== VARIANT COMPARISON ==========\n");
-        printf("\n%s:\n", variant1_name.c_str());
+        DEBUG_LOG("\n");
+        DEBUG_LOG("========== VARIANT COMPARISON ==========\n");
+        DEBUG_LOG("\n%s:\n", variant1_name.c_str());
         for (const auto& label : variant1_labels) {
             auto it = timings.find(label);
             if (it != timings.end()) {
                 double avg_ms = it->second.get_avg() / 1000.0;
-                printf("  %-40s: %.3f ms\n", label.c_str(), avg_ms);
+                DEBUG_LOG("  %-40s: %.3f ms\n", label.c_str(), avg_ms);
                 total1 += avg_ms;
             }
         }
-        printf("  %-40s: %.3f ms\n", "TOTAL", total1);
+        DEBUG_LOG("  %-40s: %.3f ms\n", "TOTAL", total1);
         
-        printf("\n%s:\n", variant2_name.c_str());
+        DEBUG_LOG("\n%s:\n", variant2_name.c_str());
         for (const auto& label : variant2_labels) {
             auto it = timings.find(label);
             if (it != timings.end()) {
                 double avg_ms = it->second.get_avg() / 1000.0;
-                printf("  %-40s: %.3f ms\n", label.c_str(), avg_ms);
+                DEBUG_LOG("  %-40s: %.3f ms\n", label.c_str(), avg_ms);
                 total2 += avg_ms;
             }
         }
-        printf("  %-40s: %.3f ms\n", "TOTAL", total2);
+        DEBUG_LOG("  %-40s: %.3f ms\n", "TOTAL", total2);
         
-        printf("\n");
+        DEBUG_LOG("\n");
         if (total1 < total2) {
             double gain = (total2 - total1) / total2 * 100.0;
-            printf("🏆 WINNER: %s (%.1f%% faster)\n", variant1_name.c_str(), gain);
+            DEBUG_LOG("🏆 WINNER: %s (%.1f%% faster)\n", variant1_name.c_str(), gain);
         } else if (total2 < total1) {
             double gain = (total1 - total2) / total1 * 100.0;
-            printf("🏆 WINNER: %s (%.1f%% faster)\n", variant2_name.c_str(), gain);
+            DEBUG_LOG("🏆 WINNER: %s (%.1f%% faster)\n", variant2_name.c_str(), gain);
         } else {
-            printf("⚖️  EQUAL: Both variants take the same time\n");
+            DEBUG_LOG("⚖️  EQUAL: Both variants take the same time\n");
         }
-        printf("=========================================\n\n");
+        DEBUG_LOG("=========================================\n\n");
     }
     
     /**
@@ -465,12 +467,12 @@ public:
         std::string filename_with_timestamp = (dir / (stem + "_" + std::string(timestamp_str) + ext)).string();
         
         // Отладочный вывод
-        fprintf(stdout, "[DEBUG EXPORT] Creating report: %s\n", filename_with_timestamp.c_str());
-        fprintf(stdout, "[DEBUG EXPORT] Directory: %s (exists: %s)\n", dir.string().c_str(), 
+        DEBUG_LOG("[DEBUG EXPORT] Creating report: %s\n", filename_with_timestamp.c_str());
+        DEBUG_LOG("[DEBUG EXPORT] Directory: %s (exists: %s)\n", dir.string().c_str(), 
                 std::filesystem::exists(dir) ? "yes" : "no");
-        fprintf(stdout, "[DEBUG EXPORT] Number of timings in profiler: %zu\n", timings.size());
+        DEBUG_LOG("[DEBUG EXPORT] Number of timings in profiler: %zu\n", timings.size());
         for (const auto& [label, data] : timings) {
-            fprintf(stdout, "[DEBUG EXPORT]   Timing: %s -> %zu measurements\n", label.c_str(), data.measurements.size());
+            DEBUG_LOG("[DEBUG EXPORT]   Timing: %s -> %zu measurements\n", label.c_str(), data.measurements.size());
         }
         
         std::ofstream file(filename_with_timestamp);
@@ -795,10 +797,10 @@ public:
         auto abs_path = std::filesystem::absolute(filename_with_timestamp);
         auto file_size = std::filesystem::file_size(filename_with_timestamp);
         
-        fprintf(stdout, "[SUCCESS] Отчет создан успешно!\n");
-        fprintf(stdout, "[SUCCESS] Имя файла: %s\n", std::filesystem::path(filename_with_timestamp).filename().string().c_str());
-        fprintf(stdout, "[SUCCESS] Полный путь: %s\n", abs_path.string().c_str());
-        fprintf(stdout, "[SUCCESS] Размер файла: %lld bytes\n", static_cast<long long>(file_size));
+        INFO_LOG("[SUCCESS] Отчет создан успешно!\n");
+        DEBUG_LOG("[SUCCESS] Имя файла: %s\n", std::filesystem::path(filename_with_timestamp).filename().string().c_str());
+        DEBUG_LOG("[SUCCESS] Полный путь: %s\n", abs_path.string().c_str());
+        DEBUG_LOG("[SUCCESS] Размер файла: %lld bytes\n", static_cast<long long>(file_size));
         
         if (file_size == 0) {
             fprintf(stderr, "[WARNING] Файл отчета пустой (0 bytes)!\n");
