@@ -6,6 +6,8 @@
 #include "IDataValidator.hpp"
 #include <string>
 #include <memory>
+#include <vector>
+#include <cstdint>
 
 namespace Correlator {
 
@@ -21,6 +23,10 @@ public:
     virtual ~IResultExporter() = default;
 
     // Экспорт на каждом этапе
+    virtual void exportStep0(const std::vector<int32_t>& reference_signal,
+                            const std::vector<int32_t>& input_signals,
+                            const IConfiguration& config) = 0;
+    
     virtual void exportStep1(const IDataSnapshot& snapshot,
                             const IConfiguration& config,
                             const ValidationResult& validation) = 0;

@@ -98,9 +98,20 @@ int main() {
         }
         std::cout << "✓ Данные сгенерированы\n\n";
 
+        // 4.5. Создать exporter для экспорта Step0 (и использования в pipeline)
+        std::cout << "[4.5] Создание exporter...\n";
+        auto exporter = IResultExporter::createDefault();
+        
+        // Экспорт M-последовательности (Step0)
+        exporter->exportStep0(reference_signal, input_signals, *config);
+        std::cout << "✓ Step0 данные экспортированы\n\n";
+
         // 5. Создать pipeline
         std::cout << "[5] Создание CorrelationPipeline...\n";
         CorrelationPipeline pipeline(std::move(backend), std::move(config));
+        
+        // Установить тот же exporter в pipeline для использования одного timestamp каталога
+        pipeline.setExporter(std::move(exporter));
         const auto& config_ref = pipeline.getConfiguration();
         std::cout << "✓ Pipeline создан\n\n";
 
@@ -226,8 +237,15 @@ int main() {
         cl_device_id device_id = backend_info.getDeviceId();
         Profiler::GPUInfo gpu_info = Profiler::get_gpu_info(device_id);
 
+        // Параметры конфигурации для отчета
+        Profiler::ConfigParams config_params;
+        config_params.fft_size = config_ref.getFFTSize();
+        config_params.num_shifts = config_ref.getNumShifts();
+        config_params.num_signals = config_ref.getNumSignals();
+        config_params.num_output_points = config_ref.getNumOutputPoints();
+
         // Экспорт в Markdown
-        if (profiler.export_to_markdown("Report/profiling_report.md", step_details, gpu_info)) {
+        if (profiler.export_to_markdown("Report/profiling_report.md", step_details, gpu_info, config_params)) {
             std::cout << "✓ Отчет профилирования сохранен: Report/profiling_report.md\n";
         } else {
             std::cout << "⚠️ Не удалось сохранить отчет профилирования\n";

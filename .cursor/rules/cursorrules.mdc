@@ -1,7 +1,7 @@
 ---
 alwaysApply: true
 ---
-# Правила работы Cursor AI для проекта AmdOpenCLTest01
+# Правила работы Cursor AI для проекта Correlator
 
 ## ГЛАВНОЕ: ЧЕСТНОСТЬ И КАЧЕСТВО
 
@@ -25,7 +25,7 @@ alwaysApply: true
 - clean clone test
 - нет CPU таймеров
 - тесты проходят
-- Project_Daily_Log.md обновлён
+- Project_map.md обновлён
 
 ## ЗАПРЕЩЕНО:
 - ❌ <chrono> в тестах

@@ -375,6 +375,13 @@ public:
         std::string driver_version;
         std::string api_version;
     };
+
+    struct ConfigParams {
+        size_t fft_size = 0;
+        int num_shifts = 0;
+        int num_signals = 0;
+        int num_output_points = 0;
+    };
     
     /**
      * Получить информацию о GPU через OpenCL
@@ -402,11 +409,13 @@ public:
      * @param filename путь к файлу для сохранения (будет переименован с timestamp)
      * @param step_details дополнительные детали по шагам (Step1, Step2, Step3)
      * @param gpu_info информация о GPU
+     * @param config_params параметры конфигурации теста
      */
     bool export_to_markdown(
         const std::string& base_filename,
         const std::map<std::string, std::map<std::string, double>>& step_details = {},
-        const GPUInfo& gpu_info = {"Unknown", "Unknown", "Unknown"}
+        const GPUInfo& gpu_info = {"Unknown", "Unknown", "Unknown"},
+        const ConfigParams& config_params = {0, 0, 0, 0}
     ) const {
         // Создать директорию, если она не существует
         try {
@@ -489,6 +498,20 @@ public:
         file << "**Примечание:** GPU времена измеряются от момента постановки в очередь (QUEUED) до завершения выполнения (END)\n";
         file << "\n";
         file << "---\n\n";
+        
+        // Параметры теста
+        if (config_params.fft_size > 0 || config_params.num_shifts > 0 || 
+            config_params.num_signals > 0 || config_params.num_output_points > 0) {
+            file << "### Параметры теста\n\n";
+            file << "| Параметр | Значение | Описание |\n";
+            file << "|----------|----------|----------|\n";
+            file << "| **fft_size** | " << config_params.fft_size << " | размер сигнала |\n";
+            file << "| **num_shifts** | " << config_params.num_shifts << " | корреляторов |\n";
+            file << "| **num_signals** | " << config_params.num_signals << " | количество сигналов |\n";
+            file << "| **num_output_points** | " << config_params.num_output_points << " | гипотезы |\n";
+            file << "\n";
+            file << "---\n\n";
+        }
         
         // Общая статистика
         file << "## 📈 Общая статистика\n\n";
@@ -885,9 +908,34 @@ public:
         file << "  },\n";
         
         // Общая статистика
+        // Вычислить суммарное время GPU для всех шагов
+        double total_gpu_time = 0.0;
+        if (step_details.find("Step1") != step_details.end()) {
+            for (const auto& [op, time_ms] : step_details.at("Step1")) {
+                if (op.find("total GPU time") != std::string::npos) {
+                    total_gpu_time += time_ms;
+                }
+            }
+        }
+        if (step_details.find("Step2") != step_details.end()) {
+            for (const auto& [op, time_ms] : step_details.at("Step2")) {
+                if (op.find("total GPU time") != std::string::npos) {
+                    total_gpu_time += time_ms;
+                }
+            }
+        }
+        if (step_details.find("Step3") != step_details.end()) {
+            for (const auto& [op, time_ms] : step_details.at("Step3")) {
+                if (op.find("total GPU time") != std::string::npos) {
+                    total_gpu_time += time_ms;
+                }
+            }
+        }
+        
         file << "  \"summary\": {\n";
         file << "    \"total_execution_time_ms\": " << format_double(get_total_all() / 1000.0) << ",\n";
-        file << "    \"profiled_operations_count\": " << timings.size() << "\n";
+        file << "    \"profiled_operations_count\": " << timings.size() << ",\n";
+        file << "    \"gpu_execution_time_ms\": " << format_double(total_gpu_time) << "\n";
         file << "  },\n";
         
         // Профилирование по шагам
@@ -896,9 +944,21 @@ public:
         // Step 1
         if (timings.find("Step1_Total") != timings.end()) {
             double step1_total_ms = get_avg("Step1_Total") / 1000.0;
+            
+            // Вычислить суммарное время GPU
+            double step1_gpu_total = 0.0;
+            if (step_details.find("Step1") != step_details.end()) {
+                for (const auto& [op, time_ms] : step_details.at("Step1")) {
+                    if (op.find("total GPU time") != std::string::npos) {
+                        step1_gpu_total += time_ms;
+                    }
+                }
+            }
+            
             file << "    \"Step1\": {\n";
             file << "      \"description\": \"Обработка опорных сигналов\",\n";
             file << "      \"total_time_ms\": " << format_double(step1_total_ms) << ",\n";
+            file << "      \"gpu_time_ms\": " << format_double(step1_gpu_total) << ",\n";
             file << "      \"operations\": {\n";
             
             if (step_details.find("Step1") != step_details.end() && !step_details.at("Step1").empty()) {
@@ -932,9 +992,21 @@ public:
         if (timings.find("Step2_Total") != timings.end()) {
             if (need_comma) file << ",\n";
             double step2_total_ms = get_avg("Step2_Total") / 1000.0;
+            
+            // Вычислить суммарное время GPU
+            double step2_gpu_total = 0.0;
+            if (step_details.find("Step2") != step_details.end()) {
+                for (const auto& [op, time_ms] : step_details.at("Step2")) {
+                    if (op.find("total GPU time") != std::string::npos) {
+                        step2_gpu_total += time_ms;
+                    }
+                }
+            }
+            
             file << "    \"Step2\": {\n";
             file << "      \"description\": \"Обработка входных сигналов\",\n";
             file << "      \"total_time_ms\": " << format_double(step2_total_ms) << ",\n";
+            file << "      \"gpu_time_ms\": " << format_double(step2_gpu_total) << ",\n";
             file << "      \"operations\": {\n";
             
             if (step_details.find("Step2") != step_details.end() && !step_details.at("Step2").empty()) {
@@ -968,9 +1040,21 @@ public:
         if (timings.find("Step3_Total") != timings.end()) {
             if (need_comma) file << ",\n";
             double step3_total_ms = get_avg("Step3_Total") / 1000.0;
+            
+            // Вычислить суммарное время GPU
+            double step3_gpu_total = 0.0;
+            if (step_details.find("Step3") != step_details.end()) {
+                for (const auto& [op, time_ms] : step_details.at("Step3")) {
+                    if (op.find("total GPU time") != std::string::npos) {
+                        step3_gpu_total += time_ms;
+                    }
+                }
+            }
+            
             file << "    \"Step3\": {\n";
             file << "      \"description\": \"Корреляция\",\n";
             file << "      \"total_time_ms\": " << format_double(step3_total_ms) << ",\n";
+            file << "      \"gpu_time_ms\": " << format_double(step3_gpu_total) << ",\n";
             file << "      \"operations\": {\n";
             
             if (step_details.find("Step3") != step_details.end() && !step_details.at("Step3").empty()) {

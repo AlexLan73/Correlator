@@ -254,6 +254,11 @@ public:
     const IFFTBackend& getBackend() const { return *backend_; }
     IFFTBackend& getBackend() { return *backend_; }
 
+    // Установка exporter (для использования одного и того же timestamp каталога)
+    void setExporter(std::unique_ptr<IResultExporter> exporter) {
+        exporter_ = std::move(exporter);
+    }
+
     // Получение данных профилирования
     void getStep1Timings(OperationTiming& upload, OperationTiming& fft) const {
         upload = step1_upload_timing_;
