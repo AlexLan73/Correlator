@@ -9,6 +9,7 @@
 #include <map>
 #include <string>
 #include <cstdio>
+#include "src/Test_GPU_and_OpenCl.h"
 
 using namespace Correlator;
 
@@ -33,6 +34,8 @@ std::vector<int32_t> generateMSequence(size_t length, uint32_t seed = 0x1) {
 }
 
 int main() {
+    test_gpu::test_gpu_opencl();
+
     COUT_LOG("╔══════════════════════════════════════════════════════════════╗\n");
     COUT_LOG("║     FFT CORRELATOR - Пример использования архитектуры       ║\n");
     COUT_LOG("╚══════════════════════════════════════════════════════════════╝\n\n");
