@@ -34,7 +34,7 @@ std::vector<int32_t> generateMSequence(size_t length, uint32_t seed = 0x1) {
 }
 
 int main() {
-    test_gpu::test_gpu_opencl();
+//    test_gpu::test_gpu_opencl();
 
     COUT_LOG("╔══════════════════════════════════════════════════════════════╗\n");
     COUT_LOG("║     FFT CORRELATOR - Пример использования архитектуры       ║\n");
@@ -51,7 +51,7 @@ int main() {
         //  работало  _ = 1<<18;   config->setNumShifts(10);  // 32
         auto xx_ = 1<<15;
         config->setFFTSize(xx_);      // 2^19
-        config->setNumShifts(10);  // 32
+        config->setNumShifts(32);  // 32
         config->setNumSignals(5); // 5
         config->setNumOutputPoints(2000);
 
